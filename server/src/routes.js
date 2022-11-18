@@ -20,22 +20,43 @@ router.get('/email-verifications', (req, res) => {
     });
 });
 
-router.post('/email-verification', (req, res) => {
-  axios.post(
-    config.prospect.baseUrl + '/api/v1/email-verifier',
-    {email: [req.body.email]},
-    {headers: {'Authorization': 'Bearer ' + config.prospect.apiKey}}
-  )
-    .then(function (response) {
-      mysql.query('INSERT INTO email (email) VALUES (?)', [req.body.email], function (err, result) {
-        mysql.query('INSERT INTO email_verification (email_id, result) VALUES (?, ?)', [result.insertId, 'success'], function (err, result) {
-          return res.send(response);
-        });
-      });
-    })
-    .catch(function (error) {
-      return res.send(error);
+router.post('/email-verification', async (req, res) => {
+  try {
+    const apiRes = await axios.post(
+      config.prospect.baseUrl + '/api/v1/email-verifier',
+      {email: [req.body.email]},
+      {headers: {'Authorization': 'Bearer ' + config.prospect.apiKey}},
+    );
+    const apiEmailInfo = apiRes.data['result'][0];
+
+    // TODO: Catch API error: apiRes.data['result'][0]['error'].
+
+    const newEmail = {
+      email: req.body.email,
+      last_verified_at: mysql.formatDate(apiEmailInfo['verifiedAt']),
+    }
+    const query1 = await mysql.asyncQuery('INSERT INTO email SET ?', [newEmail]);
+
+    const verification = {
+      email_id: query1.results.insertId,
+      result: apiEmailInfo['result'],
+      is_private: apiEmailInfo['isPrivate'],
+      is_catchall: apiEmailInfo['catchall'],
+      is_disposable: apiEmailInfo['disposable'],
+      is_freemail: apiEmailInfo['freemail'],
+      is_rolebased: apiEmailInfo['rolebased'],
+      is_dns_valid: apiEmailInfo['dnsValidMx'], // TODO: not exists in response
+      is_dns_valid_mx: apiEmailInfo['dnsValidMx'],
+      is_smtp_valid: apiEmailInfo['smtpValid'],
+    }
+    await mysql.asyncQuery('INSERT INTO email_verification SET ?', [verification]);
+
+    return res.send(apiRes.data['result']);
+  } catch (e) {
+    return res.status(400).send({
+      message: e.message,
     });
+  }
 });
 
 module.exports = router;

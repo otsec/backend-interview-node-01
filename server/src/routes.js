@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const config = require('./config');
 const mysql = require('./mysql');
+const { isValidEmail } = require('./lib/validators')
 
 const router = express.Router();
 
@@ -22,6 +23,13 @@ router.get('/email-verifications', (req, res) => {
 
 router.post('/email-verification', async (req, res) => {
   try {
+    const inputEmail = req.body.email;
+    if (!isValidEmail(inputEmail)) {
+      throw new Error('Invalid email.');
+    }
+
+    // TODO: check if email already exists.
+
     const apiRes = await axios.post(
       config.prospect.baseUrl + '/api/v1/email-verifier',
       {email: [req.body.email]},

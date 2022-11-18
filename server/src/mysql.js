@@ -43,6 +43,7 @@ function formatBoolean(value) {
 module.exports = {
   pool,
   asyncQuery,
+  prepareQuery: mysql.format,
   formatDate,
   formatBoolean,
 };

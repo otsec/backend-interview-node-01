@@ -109,7 +109,6 @@ router.post('/email-verification', async (req, res, next) => {
           email: apiResItem['email'],
           last_verified_at: mysql.formatDate(apiResItem['verifiedAt']),
         }
-        console.log(newEmail);
         const newEmailQuery = await mysql.asyncQuery('INSERT INTO email SET ?', [newEmail]);
 
         const verification = {

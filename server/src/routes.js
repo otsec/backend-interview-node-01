@@ -2,23 +2,58 @@ const express = require('express');
 const axios = require('axios');
 const config = require('./config');
 const mysql = require('./mysql');
-const { isValidEmail } = require('./lib/validators')
+const { isValidEmail, normalizeInt } = require('./lib/validators')
 
 const router = express.Router();
 
-router.get('/email-verifications', (req, res) => {
-  mysql.query(
-    `SELECT email_verification.*, email.email
-        FROM email_verification 
-        JOIN email ON email.id=email_verification.email_id
-        ORDER BY email.last_verified_at`,
-    (err, results) => {
-      if (err) {
-        return res.send(err);
-      } else {
-        return res.send(results);
+router.get('/email-verifications', async (req, res, next) => {
+  try {
+    const defaultPerPage = 10;
+
+    const params = {
+      page: normalizeInt(req.query['page'], 1, 100),
+      perPage: normalizeInt(req.query['per-page'] || defaultPerPage, 1, 50),
+    };
+
+    // TODO: Validate that page is too big?
+
+    const offset = (params.page - 1) * params.perPage;
+
+    const emailsSql = `
+      SELECT
+          e.email,
+          e.last_verified_at,
+          ev.*
+      FROM email e
+      LEFT JOIN email_verification ev ON ev.email_id = e.id
+      ORDER BY e.last_verified_at
+      LIMIT ?, ?`;
+    const emailsQuery = await mysql.asyncQuery(emailsSql, [offset, params.perPage]);
+
+    const emailsCountSql = `
+      SELECT COUNT(*) totalCount
+      FROM email
+    `;
+    const emailsCountQuery = await mysql.asyncQuery(emailsCountSql);
+
+    const result = {
+      items: emailsQuery.results.map(rawData => formatEmailResponse(rawData)),
+      pagination: {
+        page: params.page,
+        perPage: params.perPage,
+        totalCount: emailsCountQuery.results[0]['totalCount'],
       }
-    });
+    }
+
+    return res.send(result);
+  } catch (e) {
+    next(e);
+
+    // TODO: Proper error response for PROD env.
+    // return res.status(400).send({
+    //   message: e.message,
+    // });
+  }
 });
 
 router.post('/email-verification', async (req, res, next) => {
@@ -49,7 +84,7 @@ router.post('/email-verification', async (req, res, next) => {
       WHERE email in (?)`;
     const existingEmailsQuery = await mysql.asyncQuery(existingEmailsSql, [inputEmails]);
     const existingEmails = existingEmailsQuery.results
-      .map(row => row.email);
+      .map(rawData => rawData.email);
 
     const emailsForValidation = inputEmails
       .filter(email => !existingEmails.includes(email));
@@ -104,31 +139,36 @@ router.post('/email-verification', async (req, res, next) => {
       ORDER BY e.last_verified_at`;
     const emailsQuery = await mysql.asyncQuery(emailsSql, [inputEmails]);
 
-    const result = emailsQuery.results.map(row => {
-      return {
-        email: row['email'],
-        result: row['result'],
-        is_private: row['is_private'],
-        is_catchall: row['is_catchall'],
-        is_disposable: row['is_disposable'],
-        is_freemail: row['is_freemail'],
-        is_rolebased: row['is_rolebased'],
-        is_dns_valid: row['is_dns_valid'],
-        is_dns_valid_mx: row['is_dns_valid_mx'],
-        is_smtp_valid: row['is_smtp_valid'],
-        created_at: row['created_at'],
-        last_verified_at: row['last_verified_at'],
-      };
-    });
+    const result = {
+      items: emailsQuery.results.map(rawData => formatEmailResponse(rawData)),
+    };
 
     return res.send(result);
   } catch (e) {
     next(e);
 
+    // TODO: Proper error response for PROD env.
     // return res.status(400).send({
     //   message: e.message,
     // });
   }
 });
+
+function formatEmailResponse(rawData) {
+  return {
+    email: rawData['email'],
+    result: rawData['result'],
+    is_private: rawData['is_private'],
+    is_catchall: rawData['is_catchall'],
+    is_disposable: rawData['is_disposable'],
+    is_freemail: rawData['is_freemail'],
+    is_rolebased: rawData['is_rolebased'],
+    is_dns_valid: rawData['is_dns_valid'],
+    is_dns_valid_mx: rawData['is_dns_valid_mx'],
+    is_smtp_valid: rawData['is_smtp_valid'],
+    created_at: rawData['created_at'],
+    last_verified_at: rawData['last_verified_at'],
+  };
+}
 
 module.exports = router;

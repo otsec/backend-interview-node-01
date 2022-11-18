@@ -1,0 +1,57 @@
+version: "3.4"
+
+x-common-variables: &common-variables
+  MYSQL_USER: primarybyte
+  MYSQL_PASSWORD: primarybyte
+  MYSQL_DATABASE: primarybyte
+
+  PROSPECT_API_KEY: ${PROSPECT_API_KEY}
+  PROSPECT_BASE_URL: ${PROSPECT_BASE_URL}
+
+services:
+  mysql:
+    image: mysql:5.7
+    container_name: primarybyte_mysql
+    environment:
+      <<: *common-variables
+      MYSQL_HOST: localhost
+      MYSQL_ROOT_PASSWORD: root
+    restart: unless-stopped
+    volumes:
+      - ./db/sample.sql:/docker-entrypoint-initdb.d/sample.sql
+  server:
+    image: node:12
+    container_name: primarybyte_backend
+    depends_on:
+      - mysql
+    environment:
+      <<: *common-variables
+      MYSQL_HOST_IP: mysql
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./server:/app
+    links:
+      - mysql
+    command: bash -c "npm i && npm start"
+    working_dir: /app
+  client:
+    image: node:14
+    container_name: primarybyte_frontend
+    environment:
+      <<: *common-variables
+      NODE_PATH: src
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./client:/app
+    links:
+      - server
+    working_dir: /app
+    command: bash -c "yarn install && yarn start"
+  adminer:
+    image: adminer:4
+    container_name: primarybyte_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
